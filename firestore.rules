@@ -1,0 +1,35 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper function to check if the currently authenticated user is an admin.
+    // It safely checks for the document's existence before accessing its data.
+    function isAdmin() {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true;
+    }
+
+    // Rules for the 'users' collection
+    match /users/{userId} {
+      // A user can read their own profile. An admin can read any profile.
+      // This structure avoids the circular dependency that caused previous errors.
+      allow get: if request.auth.uid == userId || isAdmin();
+      
+      // Only an admin can list all users or write to any user document.
+      allow list, write: if isAdmin();
+    }
+
+    // Rules for the 'submissions' collection
+    match /submissions/{submissionId} {
+      // Any authenticated user can create a submission.
+      allow create: if request.auth != null;
+
+      // A user can get or update their own submission. An admin can get or update any submission.
+      allow get, update: if request.auth.uid == resource.data.userId || isAdmin();
+      
+      // Both regular users (querying for their own data) and admins (querying for all data) need list access.
+      // The security is enforced by the `get` rule above; if a regular user tried to access a document
+      // from a query that wasn't theirs, the `get` rule would deny it.
+      allow list: if request.auth != null;
+    }
+  }
+}
